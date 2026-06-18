@@ -1,27 +1,27 @@
 variable "vpc_name" {
-  description = "Name of the VPC"
+  description = "Name tag for the VPC, used to identify it in the AWS console"
   type        = string
 }
 
 variable "vpc_cidr" {
-  description = "CIDR block for the VPC"
+  description = "CIDR block for the VPC (e.g. 10.0.0.0/16)"
   type        = string
 }
 
 variable "enable_dns_hostnames" {
-  description = "Enable DNS hostnames in the VPC"
+  description = "Whether instances in the VPC get public DNS hostnames"
   type        = bool
   default     = true
 }
 
 variable "enable_dns_support" {
-  description = "Enable DNS support in the VPC"
+  description = "Whether to enable DNS resolution through the Amazon-provided DNS server"
   type        = bool
   default     = true
 }
 
 variable "tags" {
-  description = "Tags to apply to all resources"
+  description = "Additional tags to apply to all resources created by this module"
   type        = map(string)
   default     = {}
 }

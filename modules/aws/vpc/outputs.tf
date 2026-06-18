@@ -9,6 +9,6 @@ output "vpc_cidr" {
 }
 
 output "vpc_arn" {
-  description = "Amazon Resource Name"
+  description = "The Amazon Resource Name (ARN) of the VPC"
   value       = aws_vpc.this.arn
 }
