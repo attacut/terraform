@@ -20,6 +20,12 @@ variable "enable_dns_support" {
   default     = true
 }
 
+variable "create_igw" {
+  description = "Whether to create an Internet Gateway"
+  type        = bool
+  default     = true
+}
+
 variable "tags" {
   description = "Additional tags to apply to all resources created by this module"
   type        = map(string)
