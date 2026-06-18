@@ -6,6 +6,11 @@ variable "vpc_name" {
 variable "vpc_cidr" {
   description = "CIDR block for the VPC (e.g. 10.0.0.0/16)"
   type        = string
+
+  validation {
+    condition     = can(cidrhost(var.vpc_cidr, 0))
+    error_message = "vpc_cidr must be a valid IPv4 CIDR block (e.g. 10.0.0.0/16)."
+  }
 }
 
 variable "enable_dns_hostnames" {
