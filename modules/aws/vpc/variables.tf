@@ -14,13 +14,13 @@ variable "vpc_cidr" {
 }
 
 variable "enable_dns_hostnames" {
-  description = "Whether instances in the VPC get public DNS hostnames"
+  description = "instance ที่มี public IP ได้รับ public DNS hostname อัตโนมัติ"
   type        = bool
   default     = true
 }
 
 variable "enable_dns_support" {
-  description = "Whether to enable DNS resolution through the Amazon-provided DNS server"
+  description = "DNS resolver ของ AWS "
   type        = bool
   default     = true
 }
