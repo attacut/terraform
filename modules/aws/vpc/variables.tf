@@ -20,9 +20,31 @@ variable "enable_dns_hostnames" {
 }
 
 variable "enable_dns_support" {
-  description = "DNS resolver ของ AWS "
+  description = "DNS resolver ของ AWS"
   type        = bool
   default     = true
+}
+
+variable "private_subnets" {
+  description = "List of private subnets to create in the VPC"
+  type = list(object({
+    name = string
+    cidr = string
+    az   = string
+    tags = optional(map(string), {})
+  }))
+  default = []
+}
+
+variable "public_subnets" {
+  description = "List of public subnets to create in the VPC"
+  type = list(object({
+    name = string
+    cidr = string
+    az   = string
+    tags = optional(map(string), {})
+  }))
+  default = []
 }
 
 variable "create_igw" {
