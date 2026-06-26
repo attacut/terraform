@@ -53,6 +53,18 @@ variable "create_igw" {
   default     = true
 }
 
+variable "enable_nat_gateway" {
+  description = "Whether to create NAT Gateway(s) for the private subnets"
+  type        = bool
+  default     = false
+}
+
+variable "single_nat_gateway" {
+  description = "Use a single shared NAT Gateway instead of one per public subnet"
+  type        = bool
+  default     = false
+}
+
 variable "tags" {
   description = "Additional tags to apply to all resources created by this module"
   type        = map(string)
