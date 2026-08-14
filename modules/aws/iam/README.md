@@ -171,6 +171,169 @@ module "ci_role" {
 
 > `:root` **ไม่ได้** แปลว่า root user แต่แปลว่า "มอบสิทธิ์การตัดสินใจให้บัญชีนั้นไปจัดการเอง" — principal ฝั่งนั้นยังต้องมี `sts:AssumeRole` ใน policy ของตัวเองด้วย ถึงจะ assume ได้จริง
 
+### 4. ให้ทีม developer อ่าน log (human access)
+
+ต่างจาก 3 เคสบนตรงที่ผู้ใช้เป็น **คน** ไม่ใช่ service — หลักการคือ **ให้ assume role ไม่ใช่แนบ policy ที่ user ตรง ๆ**
+
+```
+┌─────────────────┐   sts:AssumeRole    ┌──────────────────┐   permission    ┌─────────────────┐
+│ IAM user        │ ──────────────────► │ Role             │ ──────────────► │ CloudWatch Logs │
+│ ในกลุ่ม dev      │                     │ developer-log-   │                 │ /aws/lambda/    │
+│ (alice, bob)    │  ต้องผ่าน MFA        │ reader           │  อ่านอย่างเดียว   │ my-app*         │
+└─────────────────┘                     └──────────────────┘                 └─────────────────┘
+   ต้องมีสิทธิ์                             trust policy                        inline policy
+   assume ฝั่งตัวเอง                        คุมว่าใครสวมได้                      คุมว่าอ่านอะไรได้
+```
+
+ข้อดีเทียบกับแนบ policy ที่ user ตรง ๆ: สิทธิ์เป็น session ชั่วคราวที่หมดอายุเอง, บังคับ MFA ได้, เพิ่ม/ลดคนแก้ที่เดียว, และ CloudTrail เห็นว่าใคร assume เมื่อไหร่
+
+**ฝั่ง "ได้อะไร"** — ต้องแยก 2 statement เพราะบาง action ของ CloudWatch Logs จำกัด resource ไม่ได้
+
+```hcl
+data "aws_caller_identity" "current" {}
+
+locals {
+  log_group_prefix = "/aws/lambda/my-app" # ปรับให้ตรงกับแอปของทีม
+  log_group_arn    = "arn:aws:logs:*:${data.aws_caller_identity.current.account_id}:log-group:${local.log_group_prefix}*"
+}
+
+data "aws_iam_policy_document" "log_reader" {
+  # action ที่จำกัด log group ได้
+  statement {
+    sid    = "ReadScopedLogGroups"
+    effect = "Allow"
+    actions = [
+      "logs:DescribeLogGroups",
+      "logs:DescribeLogStreams",
+      "logs:GetLogEvents",
+      "logs:FilterLogEvents",
+      "logs:GetLogGroupFields",
+      "logs:StartQuery",
+    ]
+    resources = [
+      local.log_group_arn,                   # ตัว log group
+      "${local.log_group_arn}:log-stream:*", # log stream ข้างใน
+    ]
+  }
+
+  # action ที่ AWS ไม่รองรับ resource-level ต้องใช้ "*"
+  # ปลอดภัยเพราะดึงผลได้เฉพาะ query ที่ตัวเองเริ่ม ซึ่งถูกจำกัดด้วย StartQuery ข้างบนแล้ว
+  statement {
+    sid    = "LogsInsightsResults"
+    effect = "Allow"
+    actions = [
+      "logs:GetQueryResults",
+      "logs:StopQuery",
+      "logs:DescribeQueries",
+      "logs:GetLogRecord",
+    ]
+    resources = ["*"]
+  }
+}
+```
+
+**ฝั่ง "ใคร"** — คนควรบังคับ MFA เสมอ ซึ่งต้องใช้ `assume_role_policy` แบบ raw เพราะ `trusted_role_arns` ยังใส่ condition ไม่ได้
+
+```hcl
+data "aws_iam_policy_document" "dev_assume" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "AWS"
+      identifiers = [data.aws_caller_identity.current.account_id]
+    }
+
+    condition {
+      test     = "Bool"
+      variable = "aws:MultiFactorAuthPresent"
+      values   = ["true"]
+    }
+  }
+}
+
+module "developer_log_reader" {
+  source = "../../modules/aws/iam"
+
+  role_name        = "developer-log-reader"
+  role_description = "ให้ทีม developer อ่าน log ของ my-app"
+
+  # ── ใคร: IAM user ในบัญชีนี้ ที่ผ่าน MFA และมีสิทธิ์ assume ฝั่งตัวเอง
+  assume_role_policy = data.aws_iam_policy_document.dev_assume.json
+
+  # ── ได้อะไร: อ่าน log ของ my-app เท่านั้น
+  inline_policies = {
+    log-reader = data.aws_iam_policy_document.log_reader.json
+  }
+
+  max_session_duration = 3600
+
+  tags = {
+    Team   = "developer"
+    Access = "read-only"
+  }
+}
+```
+
+**ยังไม่จบ** — account id ฝั่ง trust แปลว่า "ให้บัญชีนี้ไปตัดสินใจเอง" ต้องมีอีกครึ่งคือให้สิทธิ์ฝั่ง user ด้วย ส่วนนี้โมดูลยังไม่รองรับ (ไม่มี user/group) เลยต้องเขียนตรง ๆ
+
+```hcl
+resource "aws_iam_group" "developers" {
+  name = "developers"
+}
+
+data "aws_iam_policy_document" "allow_assume" {
+  statement {
+    effect    = "Allow"
+    actions   = ["sts:AssumeRole"]
+    resources = [module.developer_log_reader.role_arn]
+  }
+}
+
+resource "aws_iam_group_policy" "allow_assume" {
+  name   = "assume-log-reader"
+  group  = aws_iam_group.developers.name
+  policy = data.aws_iam_policy_document.allow_assume.json
+}
+
+resource "aws_iam_user_group_membership" "alice" {
+  user   = "alice"
+  groups = [aws_iam_group.developers.name]
+}
+```
+
+**สรุปสิทธิ์ที่ได้:**
+
+| ทำอะไรได้ | กับ resource ไหน |
+|---|---|
+| อ่าน log event / ค้น Logs Insights | log group ที่ขึ้นต้นด้วย `/aws/lambda/my-app` เท่านั้น |
+| ดึงผลลัพธ์ query | เฉพาะ query ที่ตัวเองเริ่ม |
+| เขียน / ลบ log | **ไม่ได้** |
+| log group ของทีมอื่น, CloudTrail, VPC Flow Logs | **ไม่ได้** |
+
+**วิธีใช้ฝั่ง developer** — ใส่ใน `~/.aws/config`
+
+```ini
+[profile log-reader]
+role_arn       = arn:aws:iam::123456789012:role/developer-log-reader
+source_profile = default
+mfa_serial     = arn:aws:iam::123456789012:mfa/alice
+```
+
+```bash
+aws logs tail /aws/lambda/my-app --follow --profile log-reader
+```
+
+**กับดักของเคสนี้**
+
+| กับดัก | รายละเอียด |
+|---|---|
+| ARN ต้องใส่ 2 บรรทัด | `logs:GetLogEvents` ทำงานที่ระดับ log *stream* ถ้าใส่แค่ ARN ของ log group จะได้ `AccessDenied` ทั้งที่ policy ดูเหมือนถูก |
+| อย่าใช้ `CloudWatchLogsReadOnlyAccess` | เป็น managed policy ที่ให้ resource `*` = อ่านได้ทุก log group ในบัญชี รวม CloudTrail, VPC Flow Logs และ log ของทีมอื่น |
+| read-only ≠ ไม่มีความเสี่ยง | ถ้า log มี PII หรือ token การให้ทีมอ่านคือการให้เห็นข้อมูล production ควรคุยเรื่อง log redaction ควบคู่ไปด้วย |
+| ถ้าองค์กรใช้ IAM Identity Center (SSO) | อย่าสร้าง IAM user ใหม่ ให้ทำเป็น permission set แทน ซึ่งอยู่นอกขอบเขตโมดูลนี้ |
+
 ## ลำดับความสำคัญของ trust policy
 
 | เงื่อนไข | ผลลัพธ์ |
@@ -205,7 +368,7 @@ aws iam simulate-principal-policy \
 |------|-------------|------|---------|:--------:|
 | `trusted_services` | AWS service principal ที่ assume role ได้ เช่น `["ec2.amazonaws.com"]`, `["lambda.amazonaws.com"]` | `list(string)` | `[]` | no |
 | `trusted_role_arns` | ARN ของ user/role/account ที่ assume role ได้ ใช้กับ cross-account | `list(string)` | `[]` | no |
-| `assume_role_policy` | trust policy JSON ดิบ **ทับ** สองตัวข้างบนเมื่อระบุ ใช้เมื่อต้องการ condition ซับซ้อน เช่น OIDC | `string` | `null` | no |
+| `assume_role_policy` | trust policy JSON ดิบ **ทับ** สองตัวข้างบนเมื่อระบุ จำเป็นเมื่อต้องใช้ condition เช่น บังคับ MFA หรือ OIDC | `string` | `null` | no |
 
 **ตอบคำถามข้อ 2 — ทำอะไรได้ กับ resource ไหน**
 
