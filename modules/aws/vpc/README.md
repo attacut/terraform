@@ -54,7 +54,7 @@ module "vpc" {
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | `vpc_name` | Name tag ของ VPC ที่ใช้ระบุใน AWS console | `string` | – | **yes** |
-| `vpc_cidr` | CIDR block ของ VPC (เช่น `10.0.0.0/16`) ต้องเป็น IPv4 CIDR ที่ถูกต้อง | `string` | – | **yes** |
+| `vpc_cidr` | CIDR block ของ VPC (เช่น `10.0.0.0/16`) | `string` | – | **yes** |
 | `enable_dns_hostnames` | ให้ instance ที่มี public IP ได้รับ public DNS hostname อัตโนมัติ | `bool` | `true` | no |
 | `enable_dns_support` | เปิดใช้ DNS resolver ของ AWS ภายใน VPC | `bool` | `true` | no |
 | `public_subnets` | รายการ public subnet ที่จะสร้าง (ดู object schema ด้านล่าง) | `list(object)` | `[]` | no |
