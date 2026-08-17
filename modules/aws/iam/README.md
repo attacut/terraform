@@ -1,6 +1,8 @@
 # AWS IAM Module
 
-Terraform module สำหรับสร้าง IAM Role บน AWS
+## Identity providers 
+
+Trust Relationship trust token ที่ออกโดย issuer เจ้าไหนบ้าง
 
 ## เริ่มจากตรงนี้ก่อน: IAM Role ตอบ 2 คำถาม
 
